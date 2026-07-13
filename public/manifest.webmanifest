@@ -2,19 +2,19 @@
   "name": "anpi-fuso",
   "short_name": "anpi-fuso",
   "description": "入力者ごとの最新安否を確認するPWA試作品",
-  "start_url": "/",
+  "start_url": ".",
   "display": "standalone",
-  "background_color": "#ec82d6",
-  "theme_color": "#ec82d6",
+  "background_color": "#fffdfa",
+  "theme_color": "#8f2464",
   "icons": [
     {
-      "src": "/icons/icon-192.svg",
+      "src": "icons/icon-192.svg",
       "sizes": "192x192",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     },
     {
-      "src": "/icons/icon-512.svg",
+      "src": "icons/icon-512.svg",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
