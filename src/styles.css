@@ -111,6 +111,108 @@ textarea:focus-visible {
   border-color: #ffffff;
 }
 
+.nav-icon,
+.bottom-icon {
+  position: relative;
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  color: currentColor;
+  flex: 0 0 auto;
+}
+
+.nav-icon::before,
+.nav-icon::after,
+.bottom-icon::before,
+.bottom-icon::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.nav-icon[data-icon="input"]::before,
+.bottom-icon[data-icon="input"]::before {
+  left: 5px;
+  top: 4px;
+  width: 12px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+}
+
+.nav-icon[data-icon="input"]::after,
+.bottom-icon[data-icon="input"]::after {
+  left: 9px;
+  top: 8px;
+  width: 10px;
+  height: 2px;
+  background: currentColor;
+  box-shadow: 0 5px 0 currentColor;
+  transform: rotate(-22deg);
+  transform-origin: left center;
+}
+
+.nav-icon[data-icon="list"]::before,
+.bottom-icon[data-icon="list"]::before {
+  left: 4px;
+  top: 5px;
+  width: 16px;
+  height: 14px;
+  border-top: 3px solid currentColor;
+  border-bottom: 3px solid currentColor;
+}
+
+.nav-icon[data-icon="list"]::after,
+.bottom-icon[data-icon="list"]::after {
+  left: 4px;
+  top: 11px;
+  width: 16px;
+  height: 3px;
+  background: currentColor;
+}
+
+.nav-icon[data-icon="safety"]::before,
+.bottom-icon[data-icon="safety"]::before {
+  left: 4px;
+  top: 4px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.nav-icon[data-icon="safety"]::after,
+.bottom-icon[data-icon="safety"]::after {
+  left: 8px;
+  top: 11px;
+  width: 9px;
+  height: 5px;
+  border-left: 3px solid currentColor;
+  border-bottom: 3px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.nav-icon[data-icon="location"]::before,
+.bottom-icon[data-icon="location"]::before {
+  left: 5px;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+}
+
+.nav-icon[data-icon="location"]::after,
+.bottom-icon[data-icon="location"]::after {
+  left: 10px;
+  top: 8px;
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
 .mobile-title {
   display: none;
 }
@@ -713,9 +815,9 @@ textarea:focus {
     font-weight: 700;
   }
 
-  .bottom-button span:first-child {
-    font-size: 25px;
-    line-height: 1;
+  .bottom-icon {
+    width: 26px;
+    height: 26px;
   }
 
   .bottom-button span:last-child {

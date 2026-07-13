@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   COMPANION_TYPES,
@@ -58,10 +58,10 @@ const emptyDraft: Draft = {
 };
 
 const navItems: Array<{ key: ViewKey; label: string; icon: string }> = [
-  { key: "input", label: "入力画面", icon: "✎" },
-  { key: "list", label: "リスト", icon: "▦" },
-  { key: "safety", label: "安否", icon: "♡" },
-  { key: "location", label: "現在地", icon: "▤" },
+  { key: "input", label: "入力画面", icon: "input" },
+  { key: "list", label: "リスト", icon: "list" },
+  { key: "safety", label: "安否", icon: "safety" },
+  { key: "location", label: "現在地", icon: "location" },
 ];
 
 function App() {
@@ -75,6 +75,9 @@ function App() {
   const [detailPriority, setDetailPriority] = useState<DetailPriority>("person");
   const [safetyPriority, setSafetyPriority] = useState<DetailPriority>("person");
   const [locationPriority, setLocationPriority] = useState<DetailPriority>("person");
+  const [detailBackView, setDetailBackView] = useState<ViewKey>("list");
+  const [safetySelectedLabel, setSafetySelectedLabel] = useState<string | null>(null);
+  const [locationSelectedLabel, setLocationSelectedLabel] = useState<string | null>(null);
 
   const latestReports = useMemo(() => latestByReporter(reports), [reports]);
   const selectedReport = useMemo(
@@ -83,6 +86,7 @@ function App() {
   );
 
   const currentTitle = view === "detail" ? selectedReport?.reporterName ?? "詳細" : navItems.find((item) => item.key === view)?.label ?? "入力画面";
+  const activeNavKey = view === "detail" ? detailBackView : view;
 
   function persist(nextReports: Report[]) {
     setReports(nextReports);
@@ -96,11 +100,16 @@ function App() {
     setNotice("");
   }
 
-  function openDetail(report: Report, priority: DetailPriority = "person") {
+  function openDetail(report: Report, priority: DetailPriority = "person", backView: ViewKey = view) {
     setSelectedId(report.id);
     setDetailPriority(priority);
+    setDetailBackView(backView === "detail" ? "list" : backView);
     setView("detail");
     setNotice("");
+  }
+
+  function goBackFromDetail() {
+    goTo(detailBackView);
   }
 
   function submitReport(event: FormEvent) {
@@ -166,12 +175,12 @@ function App() {
           <nav className="top-nav" aria-label="主要画面">
             {navItems.map((item) => (
               <button
-                className={view === item.key ? "nav-button active" : "nav-button"}
+                className={activeNavKey === item.key ? "nav-button active" : "nav-button"}
                 key={item.key}
                 onClick={() => goTo(item.key)}
                 type="button"
               >
-                <span aria-hidden="true">{item.icon}</span>
+                <span className="nav-icon" data-icon={item.icon} aria-hidden="true" />
                 {item.label}
               </button>
             ))}
@@ -200,7 +209,7 @@ function App() {
           <ListView reports={latestReports} search={search} setSearch={setSearch} onDetail={openDetail} onInput={() => goTo("input")} />
         ) : null}
         {view === "detail" && selectedReport ? (
-          <DetailView report={selectedReport} priority={detailPriority} onBack={() => goTo("list")} onEdit={fillFromReport} />
+          <DetailView report={selectedReport} priority={detailPriority} onBack={goBackFromDetail} onEdit={fillFromReport} />
         ) : null}
         {view === "safety" ? (
           <SummaryView
@@ -220,9 +229,14 @@ function App() {
               nameSelector: (report) => (safetyPriority === "person" ? report.personName : report.guardianName),
             }}
             subject={safetyPriority}
-            onSubjectChange={setSafetyPriority}
+            onSubjectChange={(subject) => {
+              setSafetyPriority(subject);
+              setSafetySelectedLabel(null);
+            }}
+            selectedLabel={safetySelectedLabel}
+            setSelectedLabel={setSafetySelectedLabel}
             onBack={() => goTo("list")}
-            onDetail={openDetail}
+            onDetail={(report, priority) => openDetail(report, priority, "safety")}
           />
         ) : null}
         {view === "location" ? (
@@ -243,17 +257,22 @@ function App() {
               nameSelector: (report) => (locationPriority === "person" ? report.personName : report.guardianName),
             }}
             subject={locationPriority}
-            onSubjectChange={setLocationPriority}
+            onSubjectChange={(subject) => {
+              setLocationPriority(subject);
+              setLocationSelectedLabel(null);
+            }}
+            selectedLabel={locationSelectedLabel}
+            setSelectedLabel={setLocationSelectedLabel}
             onBack={() => goTo("list")}
-            onDetail={openDetail}
+            onDetail={(report, priority) => openDetail(report, priority, "location")}
           />
         ) : null}
       </main>
 
       <nav className="bottom-nav" aria-label="主要画面">
         {navItems.map((item) => (
-          <button className={view === item.key ? "bottom-button active" : "bottom-button"} key={item.key} onClick={() => goTo(item.key)} type="button">
-            <span aria-hidden="true">{item.icon}</span>
+          <button className={activeNavKey === item.key ? "bottom-button active" : "bottom-button"} key={item.key} onClick={() => goTo(item.key)} type="button">
+            <span className="bottom-icon" data-icon={item.icon} aria-hidden="true" />
             <span>{item.label}</span>
           </button>
         ))}
@@ -494,6 +513,8 @@ function SummaryView({
   mode,
   subject,
   onSubjectChange,
+  selectedLabel,
+  setSelectedLabel,
   onBack,
   onDetail,
 }: {
@@ -505,20 +526,17 @@ function SummaryView({
   mode: SummaryMode;
   subject: DetailPriority;
   onSubjectChange: (subject: DetailPriority) => void;
+  selectedLabel: string | null;
+  setSelectedLabel: (label: string | null) => void;
   onBack: () => void;
   onDetail: (report: Report, priority?: DetailPriority) => void;
 }) {
-  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const chartMax = Math.max(...rows.map((row) => row.count), 0) + 10;
   const selectedRows = selectedLabel
     ? sortByLatest(reports).filter((report) => mode.valueSelector(report) === selectedLabel)
     : [];
   const selectedTitle = selectedLabel ?? (kind === "safety" ? "状況" : "場所");
   const subjectLabel = subject === "person" ? "本人" : "保護者";
-
-  useEffect(() => {
-    setSelectedLabel(null);
-  }, [subject, kind]);
 
   if (selectedLabel) {
     return (
