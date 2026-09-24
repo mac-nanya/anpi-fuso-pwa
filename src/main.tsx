@@ -1,4 +1,4 @@
-import React, { FormEvent, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   COMPANION_TYPES,
@@ -17,6 +17,8 @@ import {
   summarize,
 } from "./data";
 import { loadReports, saveReports } from "./storage";
+import { remote } from "./sync-config";
+import { syncReports } from "./sync";
 import "./styles.css";
 
 type ViewKey = "input" | "list" | "safety" | "location" | "detail";
@@ -66,6 +68,47 @@ const navItems: Array<{ key: ViewKey; label: string; icon: string }> = [
 
 function App() {
   const [reports, setReports] = useState<Report[]>(() => loadReports());
+  const reportsRef = useRef(reports);
+  const syncing = useRef(false);
+  const [syncStatus, setSyncStatus] = useState(remote ? "同期を準備しています" : "端末保存のみ（共有設定待ち）");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const pendingCount = reports.filter((report) => report.isLocalDraft).length;
+
+  async function synchronize() {
+    if (!remote || syncing.current) return;
+    if (!navigator.onLine) {
+      setSyncStatus("オフライン：通信復帰後に再送します");
+      return;
+    }
+    syncing.current = true;
+    setIsSyncing(true);
+    setSyncStatus("同期中…");
+    try {
+      await syncReports(remote, () => reportsRef.current, persist);
+      setSyncStatus(reportsRef.current.some((report) => report.isLocalDraft) ? "未送信の変更があります" : "同期済み");
+    } catch {
+      setSyncStatus("同期できませんでした。端末の内容を保持して再試行します");
+    } finally {
+      syncing.current = false;
+      setIsSyncing(false);
+    }
+  }
+
+  useEffect(() => {
+    void synchronize();
+    const retry = () => { void synchronize(); };
+    const offline = () => setSyncStatus("オフライン：通信復帰後に再送します");
+    const interval = window.setInterval(retry, 30000);
+    window.addEventListener("online", retry);
+    window.addEventListener("offline", offline);
+    window.addEventListener("focus", retry);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("online", retry);
+      window.removeEventListener("offline", offline);
+      window.removeEventListener("focus", retry);
+    };
+  }, []);
   const [view, setView] = useState<ViewKey>("input");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -89,8 +132,9 @@ function App() {
   const activeNavKey = view === "detail" ? detailBackView : view;
 
   function persist(nextReports: Report[]) {
-    setReports(nextReports);
     saveReports(nextReports);
+    reportsRef.current = nextReports;
+    setReports(nextReports);
   }
 
   function goTo(nextView: ViewKey) {
@@ -133,13 +177,19 @@ function App() {
       reportedAt: new Date().toISOString(),
       isLocalDraft: true,
     };
-    if (originalReport) {
-      persist(reports.map((current) => (current.id === originalReport.id ? report : current)));
-      setNotice("修正内容を端末に保存しました。入力者名を直した場合は、一覧と集計にも反映されます。");
-    } else {
-      persist([report, ...reports]);
-      setNotice("入力内容を端末に保存しました。今後のAPI連携ではここからサーバーへ同期します。");
+    try {
+      if (originalReport) {
+        persist(reportsRef.current.map((current) => (current.id === originalReport.id ? report : current)));
+        setNotice("修正内容を端末に保存しました。入力者名を直した場合は、一覧と集計にも反映されます。");
+      } else {
+        persist([report, ...reportsRef.current]);
+        setNotice("入力内容を端末に保存しました。");
+      }
+    } catch {
+      setNotice("端末に保存できませんでした。入力内容を残しています。空き容量やブラウザーの保存設定を確認してください。");
+      return;
     }
+    void synchronize();
     setDraft(emptyDraft);
     setEditingReportId(null);
     setSelectedId(report.id);
@@ -190,6 +240,10 @@ function App() {
       </header>
 
       <main className="content">
+        <div className="notice">
+          <span role="status">{syncStatus}{pendingCount ? `・未送信 ${pendingCount}件` : ""}</span>
+          {remote ? <button className="secondary-button" type="button" disabled={isSyncing} onClick={() => void synchronize()}>今すぐ同期</button> : null}
+        </div>
         {notice ? <div className="notice">{notice}</div> : null}
         {view === "input" ? (
           <InputView
@@ -388,7 +442,7 @@ function InputView({
           multiline
         />
 
-        <p className="submit-note">※「提出」を押すと端末に保存されます</p>
+        <p className="submit-note">{remote ? "※提出内容は誰でも閲覧・修正できます。圏外では端末に保存し、通信復帰後に送信します。" : "※「提出」を押すと端末に保存されます。共有設定後に送信します。"}</p>
         <button className="primary-button wide" disabled={!canSubmit} type="submit">
           {isEditing ? "修正を保存" : "提出"}
         </button>
@@ -496,7 +550,7 @@ function DetailView({
             ["入力時刻", formatDateTime(report.reportedAt)],
             ["入力者名", report.reporterName],
             ["入力者区分", report.reporterType || "未入力"],
-            ["保存状態", report.isLocalDraft ? "端末保存" : "サンプルデータ"],
+            ["保存状態", report.isLocalDraft ? "端末保存・未送信" : "サーバー保存済み"],
           ]}
         />
       </DetailSection>

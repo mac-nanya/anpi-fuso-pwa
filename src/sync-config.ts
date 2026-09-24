@@ -1,0 +1,5 @@
+import { createRemote } from "./sync";
+
+const url = import.meta.env.VITE_SUPABASE_URL?.trim();
+const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+export const remote = url && key ? createRemote(url, key) : null;

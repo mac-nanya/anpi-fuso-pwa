@@ -19,6 +19,7 @@ export type Report = {
   personComment: string;
   guardianComment: string;
   isLocalDraft?: boolean;
+  isSynced?: boolean;
 };
 
 export type SummaryRow = {
