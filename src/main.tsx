@@ -29,6 +29,14 @@ type ViewKey = "input" | "list" | "safety" | "location" | "detail";
 
 type DetailPriority = "person" | "guardian";
 
+function detailSubject(report: Report, priority: DetailPriority) {
+  return {
+    label: priority === "guardian" ? "保護者" : "本人",
+    name: (priority === "guardian" ? report.guardianName : report.personName) || "未入力",
+  };
+}
+
+
 type SummaryMode = {
   priority: DetailPriority;
   valueSelector: (report: Report) => string;
@@ -134,7 +142,7 @@ function App() {
     [latestReports, reports, selectedId],
   );
 
-  const currentTitle = view === "detail" ? selectedReport?.reporterName ?? "詳細" : navItems.find((item) => item.key === view)?.label ?? "入力画面";
+  const currentTitle = view === "detail" ? (selectedReport ? detailSubject(selectedReport, detailPriority).name : "詳細") : navItems.find((item) => item.key === view)?.label ?? "入力画面";
   const activeNavKey = view === "detail" ? detailBackView : view;
 
   function persist(nextReports: Report[]) {
@@ -580,6 +588,7 @@ function DetailView({
       />
     </DetailSection>
   );
+  const subject = detailSubject(report, priority);
   const orderedSections = priority === "guardian" ? [guardianSection, personSection] : [personSection, guardianSection];
 
   return (
@@ -592,8 +601,8 @@ function DetailView({
           内容を修正する
         </button>
       </div>
-      <p className="eyebrow">{report.reporterType || "入力者"}</p>
-      <h1>{report.reporterName}</h1>
+      <p className="eyebrow">{subject.label}</p>
+      <h1>{subject.name}</h1>
       <p className="date-muted">{formatDateTime(report.reportedAt)}</p>
 
       {orderedSections}
