@@ -15,7 +15,7 @@ Glideで作成した安否確認アプリ試作品を、標準的なWeb技術で
 
 ## 開発
 
-Node.js 20.19 以上を使います。
+Node.js 22.12 以上を使います。
 
 ```bash
 npm install
@@ -25,7 +25,6 @@ npm run dev
 ## 次に足すもの
 
 - Google Sheets / API 連携
-- 管理者ログイン
 - 管理画面
 - CSVエクスポート
 
@@ -33,3 +32,7 @@ npm run dev
 
 [接続設定・同期の動作・検証手順](SUPABASE_SETUP.md)を参照してください。
 `npm test` で同期処理を検証できます。
+
+## 管理者による削除・復元
+
+管理者ログインとごみ箱を実装しています。初回設定は [ADMIN_SETUP.md](ADMIN_SETUP.md) を参照してください。

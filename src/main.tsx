@@ -8,6 +8,7 @@ import {
   LOCATION_STATUSES,
   LocationStatus,
   makeReportId,
+  normalizeName,
   Report,
   REPORTER_TYPES,
   ReporterType,
@@ -18,7 +19,10 @@ import {
 } from "./data";
 import { loadReports, saveReports } from "./storage";
 import { remote } from "./sync-config";
-import { syncReports } from "./sync";
+import { syncReports, fromServer } from "./sync";
+import { supabase } from "./admin";
+import { AdminControls } from "./AdminControls";
+import { NavIcon, type NavIconName } from "./NavIcon";
 import "./styles.css";
 
 type ViewKey = "input" | "list" | "safety" | "location" | "detail";
@@ -59,7 +63,7 @@ const emptyDraft: Draft = {
   guardianComment: "",
 };
 
-const navItems: Array<{ key: ViewKey; label: string; icon: string }> = [
+const navItems: Array<{ key: ViewKey; label: string; icon: NavIconName }> = [
   { key: "input", label: "入力画面", icon: "input" },
   { key: "list", label: "リスト", icon: "list" },
   { key: "safety", label: "安否", icon: "safety" },
@@ -70,6 +74,8 @@ function App() {
   const [reports, setReports] = useState<Report[]>(() => loadReports());
   const reportsRef = useRef(reports);
   const syncing = useRef(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminBusy, setAdminBusy] = useState(false);
   const [syncStatus, setSyncStatus] = useState(remote ? "同期を準備しています" : "端末保存のみ（共有設定待ち）");
   const [isSyncing, setIsSyncing] = useState(false);
   const pendingCount = reports.filter((report) => report.isLocalDraft).length;
@@ -86,8 +92,8 @@ function App() {
     try {
       await syncReports(remote, () => reportsRef.current, persist);
       setSyncStatus(reportsRef.current.some((report) => report.isLocalDraft) ? "未送信の変更があります" : "同期済み");
-    } catch {
-      setSyncStatus("同期できませんでした。端末の内容を保持して再試行します");
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "同期できませんでした。端末の内容を保持して再試行します");
     } finally {
       syncing.current = false;
       setIsSyncing(false);
@@ -124,7 +130,7 @@ function App() {
 
   const latestReports = useMemo(() => latestByReporter(reports), [reports]);
   const selectedReport = useMemo(
-    () => reports.find((report) => report.id === selectedId) ?? latestReports.find((report) => report.id === selectedId),
+    () => latestReports.find((report) => report.id === selectedId),
     [latestReports, reports, selectedId],
   );
 
@@ -159,7 +165,16 @@ function App() {
   function submitReport(event: FormEvent) {
     event.preventDefault();
     if (!draft.reporterName.trim() || !draft.personName.trim()) return;
-    const originalReport = editingReportId ? reports.find((report) => report.id === editingReportId) : undefined;
+    const sameName = latestReports.find((report) => normalizeName(report.reporterName) === normalizeName(draft.reporterName));
+    const originalReport = editingReportId ? reports.find((report) => report.id === editingReportId) : sameName;
+    if (originalReport?.isDeleted || originalReport?.isSuperseded) {
+      setNotice("この回答は削除済みか、古い回答です。リストから最新の回答を確認してください。");
+      return;
+    }
+    if (editingReportId && sameName && sameName.id !== editingReportId) {
+      setNotice("その入力者名は使用済みです。別の名前にしてください。");
+      return;
+    }
     const report: Report = {
       id: originalReport?.id ?? makeReportId(),
       sourceRowId: originalReport?.sourceRowId ?? "",
@@ -196,6 +211,38 @@ function App() {
     setView("detail");
   }
 
+  async function changeDeletion(report: Report, deleted: boolean) {
+    if (!supabase || !isAdmin) throw new Error("管理者ログインが必要です。");
+    if (syncing.current) throw new Error("同期中です。完了後にもう一度操作してください。");
+    if (report.isLocalDraft || !report.serverUpdatedAt) throw new Error("未送信の変更があります。同期が完了してから操作してください。");
+    syncing.current = true;
+    setAdminBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("set_report_deleted", {
+        p_id: report.id, p_deleted: deleted, p_expected_updated_at: report.serverUpdatedAt,
+      });
+      if (error) throw new Error(error.message);
+      const saved = fromServer(data);
+      try {
+        persist([...reportsRef.current.filter(r => r.id !== saved.id), saved]);
+      } catch {
+        throw new Error("サーバーでの操作は完了しましたが、端末に保存できません。再読み込みしてください。");
+      }
+      if (deleted) { setView("list"); setSelectedId(null); }
+      setNotice(deleted ? "回答をごみ箱に移しました。管理者メニューから復元できます。" : "回答を復元しました。");
+    } finally {
+      syncing.current = false;
+      setAdminBusy(false);
+    }
+    await synchronize();
+  }
+
+  async function deleteReport(report: Report) {
+    if (!window.confirm(`「${report.reporterName}」の回答（${formatDateTime(report.reportedAt)}）をごみ箱に移しますか？\nリストと集計から除外します。管理者メニューから復元できます。`)) return;
+    try { await changeDeletion(report, true); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "削除できませんでした。"); }
+  }
+
   function fillFromReport(report: Report, editMode: boolean) {
     setDraft({
       reporterName: report.reporterName,
@@ -226,11 +273,12 @@ function App() {
             {navItems.map((item) => (
               <button
                 className={activeNavKey === item.key ? "nav-button active" : "nav-button"}
+                aria-current={activeNavKey === item.key ? "page" : undefined}
                 key={item.key}
                 onClick={() => goTo(item.key)}
                 type="button"
               >
-                <span className="nav-icon" data-icon={item.icon} aria-hidden="true" />
+                <NavIcon className="nav-icon" name={item.icon} />
                 {item.label}
               </button>
             ))}
@@ -240,7 +288,7 @@ function App() {
       </header>
 
       <main className="content">
-        <div className="notice">
+        <div className="notice sync-notice">
           <span role="status">{syncStatus}{pendingCount ? `・未送信 ${pendingCount}件` : ""}</span>
           {remote ? <button className="secondary-button" type="button" disabled={isSyncing} onClick={() => void synchronize()}>今すぐ同期</button> : null}
         </div>
@@ -263,7 +311,10 @@ function App() {
           <ListView reports={latestReports} search={search} setSearch={setSearch} onDetail={openDetail} onInput={() => goTo("input")} />
         ) : null}
         {view === "detail" && selectedReport ? (
-          <DetailView report={selectedReport} priority={detailPriority} onBack={goBackFromDetail} onEdit={fillFromReport} />
+          <>
+            <DetailView report={selectedReport} priority={detailPriority} onBack={goBackFromDetail} onEdit={fillFromReport} />
+            {isAdmin && <div className="admin-delete"><button className="danger-button" type="button" disabled={adminBusy || isSyncing || selectedReport.isLocalDraft} onClick={() => void deleteReport(selectedReport)}>この回答を削除する</button></div>}
+          </>
         ) : null}
         {view === "safety" ? (
           <SummaryView
@@ -321,12 +372,14 @@ function App() {
             onDetail={(report, priority) => openDetail(report, priority, "location")}
           />
         ) : null}
+        {view === "detail" && !selectedReport && <p role="status">この回答は削除されたか、同じ入力者の回答に統合されました。<button className="secondary-button" type="button" onClick={() => goTo("list")}>リストへ</button></p>}
+        <AdminControls onAdminChange={setIsAdmin} onRestore={report => changeDeletion(report, false)} busy={adminBusy || isSyncing} />
       </main>
 
       <nav className="bottom-nav" aria-label="主要画面">
         {navItems.map((item) => (
-          <button className={activeNavKey === item.key ? "bottom-button active" : "bottom-button"} key={item.key} onClick={() => goTo(item.key)} type="button">
-            <span className="bottom-icon" data-icon={item.icon} aria-hidden="true" />
+          <button aria-current={activeNavKey === item.key ? "page" : undefined} className={activeNavKey === item.key ? "bottom-button active" : "bottom-button"} key={item.key} onClick={() => goTo(item.key)} type="button">
+            <NavIcon className="bottom-icon" name={item.icon} />
             <span>{item.label}</span>
           </button>
         ))}
@@ -471,7 +524,7 @@ function ListView({
 
   return (
     <section className="view narrow">
-      <p className="intro">入力者名ごとの最新1件を表示しています</p>
+      <p className="intro">入力者ごとに1件の回答を表示しています</p>
       <button className="primary-button wide" onClick={onInput} type="button">
         安否を入力する
       </button>

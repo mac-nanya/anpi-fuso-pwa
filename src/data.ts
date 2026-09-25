@@ -20,6 +20,9 @@ export type Report = {
   guardianComment: string;
   isLocalDraft?: boolean;
   isSynced?: boolean;
+  isDeleted?: boolean;
+  isSuperseded?: boolean;
+  serverUpdatedAt?: string;
 };
 
 export type SummaryRow = {
@@ -425,6 +428,7 @@ export function sortByLatest(reports: Report[]): Report[] {
 export function latestByReporter(reports: Report[]): Report[] {
   const map = new Map<string, Report>();
   for (const report of sortByLatest(reports)) {
+    if (report.isDeleted || report.isSuperseded) continue;
     const key = normalizeName(report.reporterName);
     if (key && !map.has(key)) {
       map.set(key, report);
